@@ -2,10 +2,12 @@ import numpy as np
 import pandas as pd
 
 from network import ring_network
-from dynamics import initialize_states, initialize_beliefs, apply_contagion, update_beliefs
+from dynamics import initialize_states, initialize_beliefs, apply_contagion, update_beliefs, update_beliefs_nonpartners
 from proposal_rules import make_proposals, collaboration_pairs
+from cutoff import calculate_belief_cutoff, accuracy
+from voting import singleton_vote_correctness
 
-def one_simulation(N, T, initial_corruption_rate, belief_threshold, beta, seed=None):
+def one_simulation(N, T, initial_corruption_rate, beta, gamma, alpha, memory_endowment, collaboration_cost, discount_factor, seed=None):
 
     rng = np.random.default_rng(seed)
 
@@ -25,25 +27,31 @@ def one_simulation(N, T, initial_corruption_rate, belief_threshold, beta, seed=N
     num_honest_history = []
     corruption_rate_history = []
     collaboration_rate_history = []
+    belief_cutoff_history = []
 
     for t in range(T):
 
-        # Record the current statistics at each time step.
-        num_corrupted = int(np.sum(corrupted))
-        num_honest = N - num_corrupted
-        corruption_rate = num_corrupted/N
 
+        # Calculate endogenous belief cutoff
+        belief_cutoff = calculate_belief_cutoff(
+            t=t,
+            T=T,
+            beta=beta,
+            gamma=gamma,
+            alpha=alpha,
+            memory_endowment=memory_endowment,
+            collaboration_cost=collaboration_cost,
+            discount_factor=discount_factor
+        )
 
-        num_corrupted_history.append(num_corrupted)
-        num_honest_history.append(num_honest)
-        corruption_rate_history.append(corruption_rate)
+        belief_cutoff_history.append(belief_cutoff)
 
         # Each agent makes a proposal.
         proposals = make_proposals(
             N=N,
             neighbors=neighbors,
             belief=belief,
-            belief_threshold=belief_threshold,
+            belief_cutoff=belief_cutoff,
             rng=rng)
 
         # Mutual proposal from collaboration pairs.
@@ -52,6 +60,19 @@ def one_simulation(N, T, initial_corruption_rate, belief_threshold, beta, seed=N
         # Record the collaboration rate.
         collaboration_rate = np.mean(partners != -1)
         collaboration_rate_history.append(collaboration_rate)
+
+
+        solo_accuracy = accuracy(
+            memory=memory_endowment,
+            gamma=gamma,
+            alpha=alpha
+        )
+
+        vote_correct = singleton_vote_correctness(
+            corrupted=corrupted,
+            solo_accuracy=solo_accuracy,
+            rng=rng
+        )
 
         # Apply contagion.
         next_corrupted = apply_contagion(corrupted=corrupted, pairs=pairs, beta=beta, rng=rng)
@@ -63,8 +84,25 @@ def one_simulation(N, T, initial_corruption_rate, belief_threshold, beta, seed=N
                                 pairs=pairs,
                                 beta=beta)
 
+        belief = update_beliefs_nonpartners(
+            belief=belief,
+            neighbors=neighbors,
+            pairs=pairs,
+            vote_correct=vote_correct,
+            solo_accuracy=solo_accuracy
+        )
+
         # Update the corrupted states for the next iteration.
         corrupted = next_corrupted
+
+        # Record the current statistics at each time step.
+        num_corrupted = int(np.sum(corrupted))
+        num_honest = N - num_corrupted
+        corruption_rate = num_corrupted/N
+        
+        num_corrupted_history.append(num_corrupted)
+        num_honest_history.append(num_honest)
+        corruption_rate_history.append(corruption_rate)
 
     # Store the statistics for the current time step.
     results = {
@@ -74,6 +112,7 @@ def one_simulation(N, T, initial_corruption_rate, belief_threshold, beta, seed=N
             "num_honest": np.array(num_honest_history),
             "corruption_rate": np.array(corruption_rate_history),
             "collaboration_rate": np.array(collaboration_rate_history),
+            "belief_cutoff": np.array(belief_cutoff_history),
             "final_num_corrupted": int(np.sum(corrupted)),
             "final_num_honest": int(N - np.sum(corrupted)),
             "final_corruption_rate": float(np.mean(corrupted)),
@@ -89,8 +128,12 @@ def many_simulations(
         N,
         T,
         initial_corruption_rate,
-        belief_threshold,
         beta,
+        gamma,
+        alpha,
+        memory_endowment,
+        collaboration_cost,
+        discount_factor,
         save_csv,
         csv_filename,
         save_trajectories,
@@ -103,7 +146,17 @@ def many_simulations(
     
 
     for simulation in range(num_simulations):
-        results = one_simulation(N=N, T=T, initial_corruption_rate=initial_corruption_rate, belief_threshold=belief_threshold, beta=beta, seed=simulation)
+        results = one_simulation(
+            N=N,
+            T=T,
+            initial_corruption_rate=initial_corruption_rate,
+            beta=beta,
+            gamma=gamma,
+            alpha=alpha,
+            memory_endowment=memory_endowment,
+            collaboration_cost=collaboration_cost,
+            discount_factor=discount_factor,
+            seed=simulation)
 
         run_record = {
             "run_id": simulation,
@@ -111,7 +164,11 @@ def many_simulations(
             "T": T,
             "initial_corruption_rate_parameter": initial_corruption_rate,
             "beta": beta,
-            "belief_threshold": belief_threshold,
+            "gamma":gamma,
+            "alpha":alpha,
+            "memory_endowment":memory_endowment,
+            "collaboration_cost":collaboration_cost,
+            "discount_factor":discount_factor,
             "initial_num_corrupted": results["initial_num_corrupted"],
             "initial_corruption_rate_actual": results["initial_corruption_rate_actual"],
             "final_num_corrupted": results["final_num_corrupted"],
@@ -120,8 +177,8 @@ def many_simulations(
             "spread_amount": results["final_num_corrupted"] - results["initial_num_corrupted"],
             "spread_rate_change": results["final_corruption_rate"] - results["initial_corruption_rate_actual"],
             "full_corruption": results["final_num_corrupted"] == N,
-            "no_spread": results["final_num_corrupted"] <= results["initial_num_corrupted"]
-
+            "no_spread": results["final_num_corrupted"] <= results["initial_num_corrupted"],
+            "belief_cutoff": results["belief_cutoff"].mean()
         }
 
         run_records.append(run_record)
@@ -131,15 +188,21 @@ def many_simulations(
                 trajectory_record = {
                     "run_id": simulation,
                     "time_step": t,
+                    "period": t + 1,
                     "N": N,
                     "T": T,
                     "initial_corruption_rate_parameter": initial_corruption_rate,
                     "beta": beta,
-                    "belief_threshold": belief_threshold,
+                    "gamma": gamma,
+                    "alpha": alpha,
+                    "memory_endowment": memory_endowment,
+                    "collaboration_cost": collaboration_cost,
+                    "discount_factor": discount_factor,
                     "num_corrupted": results["num_corrupted"][t],
                     "num_honest": results["num_honest"][t],
                     "corruption_rate": results["corruption_rate"][t],
-                    "collaboration_rate": results["collaboration_rate"][t]
+                    "collaboration_rate": results["collaboration_rate"][t],
+                    "belief_cutoff": results["belief_cutoff"][t]
                 }
 
                 trajectory_records.append(trajectory_record)

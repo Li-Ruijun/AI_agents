@@ -1,6 +1,6 @@
 import numpy as np
 
-def make_proposals(N, neighbors, belief, belief_threshold, rng):
+def make_proposals(N, neighbors, belief, belief_cutoff, rng):
 
     # Make proposals based on the beliefs of the agents in the network.
     proposals = np.full(N, -1, dtype=int)
@@ -9,7 +9,7 @@ def make_proposals(N, neighbors, belief, belief_threshold, rng):
         candidate_neighbors = []
 
         for j in neighbors[i]:
-            if belief[i, j] <= belief_threshold:
+            if belief[i, j] <= belief_cutoff:
                 candidate_neighbors.append(j)
 
         if len(candidate_neighbors) > 0:

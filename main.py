@@ -7,8 +7,12 @@ from config import (
     T,
     num_simulations,
     initial_corruption_rate,
-    belief_threshold,
     beta,
+    gamma,
+    alpha,
+    memory_endowment,
+    collaboration_cost,
+    discount_factor,
     seed,
     save_csv,
     save_trajectories,
@@ -19,6 +23,7 @@ from config import (
     figures_dir
 
 )
+
 if __name__ == "__main__":
 
     os.makedirs(results_dir, exist_ok=True)
@@ -30,15 +35,22 @@ if __name__ == "__main__":
         N=N,
         T=T,
         initial_corruption_rate=initial_corruption_rate,
-        belief_threshold=belief_threshold,
         beta=beta,
+        gamma=gamma,
+        alpha=alpha,
+        memory_endowment=memory_endowment,
+        collaboration_cost=collaboration_cost,
+        discount_factor=discount_factor,
         seed=seed)
 
     print("Single simulation results:")
+    print(f"Initial number of corrupted agents: {results['initial_num_corrupted']}")
+    print(f"Initial corrupted rate: {results['initial_corruption_rate_actual']:.4f}")
     print(f"Final number of honest agents: {results['final_num_honest']}")
     print(f"Final number of corrupted agents: {results['final_num_corrupted']}")
     print(f"Final corrupted rate: {results['final_corruption_rate']:.4f}")
-
+    print(f"Mean collaboration rate: {results['collaboration_rate'].mean():.4f}")
+    print(f"Mean belief cutoff: {results['belief_cutoff'].mean():.4f}")
 
     # Run many simulations.
     summary = many_simulations(
@@ -46,8 +58,12 @@ if __name__ == "__main__":
         N=N,
         T=T,
         initial_corruption_rate=initial_corruption_rate,
-        belief_threshold=belief_threshold,
         beta=beta,
+        gamma=gamma,
+        alpha=alpha,
+        memory_endowment=memory_endowment,
+        collaboration_cost=collaboration_cost,
+        discount_factor=discount_factor,
         save_csv=save_csv,
         csv_filename=simulation_results_csv,
         save_trajectories=save_trajectories,
@@ -64,4 +80,3 @@ if __name__ == "__main__":
     print(f"Mean spread rate change: {summary['mean_spread_rate_change']:.4f}")
     print(f"Probability of full corruption: {summary['prob_full_corruption']:.4f}")
     print(f"Probability of no spread: {summary['prob_no_spread']:.4f}")
-    

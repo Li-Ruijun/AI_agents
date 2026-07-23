@@ -1,4 +1,5 @@
 import numpy as np
+from voting import singleton_belief_update
 
 def initialize_states(N, initial_corruption_rate, rng):
 
@@ -33,7 +34,7 @@ def apply_contagion(corrupted, pairs, beta, rng):
 
 
 def update_beliefs(belief, corrupted, next_corrupted, pairs, beta):
-
+# Update beliefs for direct-collaboration case
     new_belief = belief.copy()
 
     for i, j in pairs:
@@ -58,3 +59,29 @@ def update_beliefs(belief, corrupted, next_corrupted, pairs, beta):
     
     return new_belief
     
+
+def update_beliefs_nonpartners(belief, neighbors, pairs, vote_correct,  solo_accuracy):
+# Update beliefs for no-direct_collaboration case
+    new_belief = belief.copy()
+
+    paired_edges = set()
+
+    for i, j in pairs:
+        paired_edges.add((i, j))
+        paired_edges.add((j, i))
+
+    N = len(neighbors)
+
+    for i in range(N):
+        for j in neighbors[i]:
+
+            if (i, j) in paired_edges:
+                continue
+
+            new_belief[i, j] = singleton_belief_update(
+                prior_belief=belief[i,j],
+                observed_correct=vote_correct[j],
+                solo_accuracy=solo_accuracy
+            )
+    
+    return new_belief
