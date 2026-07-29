@@ -1,7 +1,7 @@
 
 # Basic simulation settings.
 N = 400 # Number of agents.
-T = 1000   # Time steps.
+T = 100   # Time steps.
 num_simulations = 600
 
 
@@ -25,8 +25,8 @@ save_trajectories = True
 
 num_trajectories = 7
 
-simulation_results_csv = "results/simulation_results.csv"
-trajectory_results_csv = "results/trajectory_results.csv"
+simulation_results_csv = "results/simulation_results_test.csv"
+trajectory_results_csv = "results/trajectory_results_test.csv"
 
 results_dir = "results"
 figures_dir = "figures"

@@ -1,23 +1,36 @@
 import numpy as np
 
-def make_proposals(N, neighbors, belief, belief_cutoff, rng):
+def make_proposals(N, neighbors, belief, belief_cutoff, corrupted, rng):
 
     # Make proposals based on the beliefs of the agents in the network.
     proposals = np.full(N, -1, dtype=int)
 
     for i in range(N):
-        candidate_neighbors = []
+        if corrupted[i]:
 
-        for j in neighbors[i]:
-            if belief[i, j] <= belief_cutoff:
-                candidate_neighbors.append(j)
+            if len(neighbors[i]) ==0:
+                continue
 
-        if len(candidate_neighbors) > 0:
-                # Choose the neighbor with the lowest belief
-                min_belief = min(belief[i, j] for j in candidate_neighbors)
+            min_belief = min(belief[i, j] for j in neighbors[i])
+
+            best_neighbors = [j for j in neighbors[i] if belief[i, j] == min_belief]
+
+            proposals[i] = rng.choice(best_neighbors)
+
+        else:
+
+            candidate_neighbors = []
+
+            for j in neighbors[i]:
+                if belief[i, j] <= belief_cutoff:
+                    candidate_neighbors.append(j)
+
+            if len(candidate_neighbors) > 0:
+                    # Choose the neighbor with the lowest belief
+                    min_belief = min(belief[i, j] for j in candidate_neighbors)
                 
-                best_neighbors = [j for j in candidate_neighbors if belief[i, j] == min_belief]
-                proposals[i] = rng.choice(best_neighbors)
+                    best_neighbors = [j for j in candidate_neighbors if belief[i, j] == min_belief]
+                    proposals[i] = rng.choice(best_neighbors)
         
     return proposals
 

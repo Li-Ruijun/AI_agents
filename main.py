@@ -51,6 +51,13 @@ if __name__ == "__main__":
     print(f"Final corrupted rate: {results['final_corruption_rate']:.4f}")
     print(f"Mean collaboration rate: {results['collaboration_rate'].mean():.4f}")
     print(f"Mean belief cutoff: {results['belief_cutoff'].mean():.4f}")
+    print("Corruption stabilization period: "f"{results['corruption_stabilization_period']}")
+    print("Final number of HH pairs: "f"{results['num_hh_pairs'][-1]}")
+    print("Final number of HC pairs: "f"{results['num_hc_pairs'][-1]}")
+    print("Final number of CC pairs: "f"{results['num_cc_pairs'][-1]}")
+    print("Final number of collaborating honest agents: "f"{results['num_honest_collaborating'][-1]}")
+    print("Final number of collaborating corrupted agents: "f"{results['num_corrupted_collaborating'][-1]}")
+
 
     # Run many simulations.
     summary = many_simulations(
