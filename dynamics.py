@@ -1,87 +1,159 @@
 import numpy as np
-from voting import singleton_belief_update
+
 
 def initialize_states(N, initial_corruption_rate, rng):
 
-    # Initialize the states of the nodes in the network.
-    corrupted = rng.random(N) < initial_corruption_rate
-
-    return corrupted
+    return rng.random(N) < initial_corruption_rate
 
 
 def initialize_beliefs(N, initial_corruption_rate):
 
-    # Initialize the beliefs of the nodes in the network.
-    belief = np.full((N,N), initial_corruption_rate, dtype=float)
-
-    return belief
+    return np.full((N, N), initial_corruption_rate, dtype=float)
 
 
-def apply_contagion(corrupted, pairs, beta, rng):
+def direct_nonconversion_update(prior_belief, beta):
 
-    # Apply the contagion process based on the collaboration pairs and the corruption probability.
-    next_corrupted = corrupted.copy()
+    denominator = 1 - beta * prior_belief
 
+    if denominator <= 1e-12:
+        return 0.0
+
+    posterior = prior_belief * (1 - beta) / denominator
+
+    return float(np.clip(posterior, 0.0, 1.0))
+
+
+def singleton_pool_belief_update(prior_j, observed_correct, solo_accuracy):
+
+    prior_j = float(prior_j)
+    A = float(solo_accuracy)
+
+    if observed_correct:
+        likelihood_honest = A
+        likelihood_corrupt = 1 - A
+    else:
+        likelihood_honest = 1 - A
+        likelihood_corrupt = A
+
+    denominator = (1 - prior_j) * likelihood_honest + prior_j * likelihood_corrupt
+
+    if denominator <= 0:
+        raise ZeroDivisionError("The singleton observation has zero likelihood.")
+
+    posterior = prior_j * likelihood_corrupt / denominator
+
+    return float(np.clip(posterior, 0.0, 1.0))
+
+
+def observed_pair_belief_update(prior_j, prior_k, observed_correct, pair_accuracy, beta):
+
+    prior_j = float(prior_j)
+    prior_k = float(prior_k)
+    A = float(pair_accuracy)
+
+    # Construct the joint prior.
+    prior_HH = (1 - prior_j) * (1 - prior_k)
+    prior_HC = (1 - prior_j) * prior_k
+    prior_CH = prior_j * (1 - prior_k)
+    prior_CC = prior_j * prior_k
+
+    # Determine the vote likelihoods.
+    if observed_correct:
+        likelihood_no_reversal = A
+        likelihood_reversal = 1 - A
+    else:
+        likelihood_no_reversal = 1 - A
+        likelihood_reversal = A
+
+    likelihood_mixed = (1 - beta) * likelihood_no_reversal + beta * likelihood_reversal
+
+    denominator = (
+        prior_HH * likelihood_no_reversal
+        + prior_HC * likelihood_mixed
+        + prior_CH * likelihood_mixed
+        + prior_CC * likelihood_reversal
+    )
+
+    if denominator <= 0:
+        raise ZeroDivisionError("The observed pair outcome has zero likelihood.")
+
+    # Include agents already corrupted and agents converted in a mixed pair.
+    posterior_j = (
+        prior_CH * likelihood_mixed
+        + prior_CC * likelihood_reversal
+        + prior_HC * beta * likelihood_reversal
+    ) / denominator
+
+    posterior_k = (
+        prior_HC * likelihood_mixed
+        + prior_CC * likelihood_reversal
+        + prior_CH * beta * likelihood_reversal
+    ) / denominator
+
+    return float(np.clip(posterior_j, 0.0, 1.0)), float(np.clip(posterior_k, 0.0, 1.0))
+
+
+def update_beliefs(
+    belief, neighbors, partners, pairs, corrupted, next_corrupted,
+    vote_correct, solo_accuracy, pair_accuracy, beta
+):
+
+    prior_belief = belief.copy()
+    new_belief = prior_belief.copy()
+
+    # Update direct collaborators.
     for i, j in pairs:
-
-        # If one of the nodes is corrupted and the other is not, there is a chance for the uncorrupted node to become corrupted.
-        if corrupted[i] != corrupted[j]:
-            if rng.random() < beta:
-                next_corrupted[i] = True
-                next_corrupted[j] = True
-
-    return next_corrupted
-
-
-def update_beliefs(belief, corrupted, next_corrupted, pairs, beta):
-# Update beliefs for direct-collaboration case
-    new_belief = belief.copy()
-
-    for i, j in pairs:
-
-        # Update the beliefs based on the current and next corrupted states of the nodes in the collaboration pairs.
         if not corrupted[i]:
             if next_corrupted[i]:
-                # i became corrupted, so j must have been corrrupted.
                 new_belief[i, j] = 1.0
             else:
-                # i did not become corrupted, update by Bayes' rule.
-                new_belief[i,j] = belief[i,j]*(1-beta)/(1-beta*belief[i,j])
-        
-        # Update the beliefs for the other node in the pair.
+                new_belief[i, j] = direct_nonconversion_update(prior_belief[i, j], beta)
+
         if not corrupted[j]:
             if next_corrupted[j]:
-                # j became corrupted, so i must have been corrrupted.
                 new_belief[j, i] = 1.0
             else:
-                # j did not become corrupted, update by Bayes' rule.
-                new_belief[j,i] = belief[j,i]*(1-beta)/(1-beta*belief[j,i])
-    
-    return new_belief
-    
+                new_belief[j, i] = direct_nonconversion_update(prior_belief[j, i], beta)
 
-def update_beliefs_nonpartners(belief, neighbors, pairs, vote_correct,  solo_accuracy):
-# Update beliefs for no-direct_collaboration case
-    new_belief = belief.copy()
-
-    paired_edges = set()
-
-    for i, j in pairs:
-        paired_edges.add((i, j))
-        paired_edges.add((j, i))
-
+    # Update non-direct neighbours.
     N = len(neighbors)
 
     for i in range(N):
-        for j in neighbors[i]:
+        processed_pairs = set()
 
-            if (i, j) in paired_edges:
+        for j in neighbors[i]:
+            if partners[i] == j:
                 continue
 
-            new_belief[i, j] = singleton_belief_update(
-                prior_belief=belief[i,j],
-                observed_correct=vote_correct[j],
-                solo_accuracy=solo_accuracy
+            observed_correct = bool(vote_correct[j])
+            k = int(partners[j])
+
+            if k == -1:
+                new_belief[i, j] = singleton_pool_belief_update(
+                    prior_j=prior_belief[i, j],
+                    observed_correct=observed_correct,
+                    solo_accuracy=solo_accuracy,
+                )
+                continue
+
+            if k == i:
+                continue
+
+            observed_pair = tuple(sorted((int(j), k)))
+
+            if observed_pair in processed_pairs:
+                continue
+
+            posterior_j, posterior_k = observed_pair_belief_update(
+                prior_j=prior_belief[i, j],
+                prior_k=prior_belief[i, k],
+                observed_correct=observed_correct,
+                pair_accuracy=pair_accuracy,
+                beta=beta,
             )
-    
+
+            new_belief[i, j] = posterior_j
+            new_belief[i, k] = posterior_k
+            processed_pairs.add(observed_pair)
+
     return new_belief
